@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fretboard Trainer</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🎸 Fretboard Trainer</h1>
+      <p class="tagline">Hear the prompt, find the note, play it. The mic checks your pitch.</p>
+    </header>
+
+    <!-- ===================== Prompt card ===================== -->
+    <main class="card prompt-card" id="promptCard">
+      <div class="mode-tabs" role="tablist">
+        <button class="tab active" id="tab-note" role="tab">Single notes</button>
+        <button class="tab" id="tab-scale" role="tab">Scale runs</button>
+        <button class="tab" id="tab-ear" role="tab">Ear training</button>
+        <button class="tab" id="tab-phrase" role="tab">Call &amp; response</button>
+        <button class="tab" id="tab-bend" role="tab">Bends &amp; holds</button>
+      </div>
+
+      <div id="idleView">
+        <p class="idle-text" id="idleText"></p>
+        <div class="idle-buttons">
+          <button class="btn btn-primary btn-big" id="startBtn">▶ Start session</button>
+          <button class="btn btn-big" id="workoutBtn">🏋️ Daily workout</button>
+        </div>
+        <p class="streak-line" id="streakLine" hidden></p>
+      </div>
+
+      <div id="activeView" hidden>
+        <div class="workout-line" id="workoutLine" hidden></div>
+        <!-- ---- single-note prompt ---- -->
+        <div id="noteBlock" hidden>
+          <div class="prompt-row">
+            <div class="prompt-target">
+              <div class="prompt-string" id="promptString"></div>
+              <div class="prompt-note" id="promptNote"></div>
+              <div class="prompt-hint" id="promptHint" hidden></div>
+            </div>
+            <div class="prompt-timer" id="noteTimer">0.0s</div>
+          </div>
+        </div>
+
+        <!-- ---- scale-run prompt ---- -->
+        <div id="scaleBlock" hidden>
+          <div class="prompt-row">
+            <div class="prompt-target">
+              <div class="prompt-string" id="scaleWhere"></div>
+              <div class="prompt-note prompt-scale" id="scaleName"></div>
+              <div class="prompt-hint">Play each note in order, up to the octave</div>
+            </div>
+            <div class="prompt-timer" id="scaleTimer">0.0s</div>
+          </div>
+          <div class="run-dots" id="runDots"></div>
+        </div>
+
+        <!-- ---- ear-training prompt ---- -->
+        <div id="earBlock" hidden>
+          <div class="prompt-row">
+            <div class="prompt-target">
+              <div class="prompt-string" id="earWhere"></div>
+              <div class="prompt-note" id="earNote">?</div>
+              <div class="prompt-hint" id="earHint" hidden></div>
+            </div>
+            <div class="prompt-timer" id="earTimer">0.0s</div>
+          </div>
+          <div class="cue-status" id="earStatus">🔈 Listen…</div>
+        </div>
+
+        <!-- ---- call & response prompt ---- -->
+        <div id="phraseBlock" hidden>
+          <div class="prompt-row">
+            <div class="prompt-target">
+              <div class="prompt-string" id="phraseWhere"></div>
+              <div class="prompt-note prompt-scale" id="phraseName"></div>
+              <div class="prompt-hint">Play the phrase back, note for note</div>
+            </div>
+            <div class="prompt-timer" id="phraseTimer">0.0s</div>
+          </div>
+          <div class="run-dots" id="phraseDots"></div>
+          <div class="cue-status" id="phraseStatus">🔈 Listen…</div>
+        </div>
+
+        <!-- ---- bends & holds prompt ---- -->
+        <div id="bendBlock" hidden>
+          <div class="prompt-row">
+            <div class="prompt-target">
+              <div class="prompt-string" id="bendWhere"></div>
+              <div class="prompt-note prompt-scale" id="bendTask"></div>
+              <div class="prompt-hint" id="bendPhase"></div>
+            </div>
+            <div class="prompt-timer" id="bendTimer">0.0s</div>
+          </div>
+          <div class="hold-bar"><div class="hold-fill" id="bendProgress"></div></div>
+        </div>
+
+        <!-- Tuner / listening feedback -->
+        <div class="tuner">
+          <div class="tuner-readout">
+            <span class="tuner-label">Hearing</span>
+            <span class="tuner-note" id="heardNote">—</span>
+            <span class="tuner-cents" id="heardCents"></span>
+            <span class="beat-dot" id="beatDot" hidden></span>
+          </div>
+          <div class="cents-meter" role="img" aria-label="pitch offset meter">
+            <div class="cents-scale">
+              <span>-50¢</span><span>-25¢</span><span>0</span><span>+25¢</span><span>+50¢</span>
+            </div>
+            <div class="cents-track">
+              <div class="cents-target-zone"></div>
+              <div class="cents-center-line"></div>
+              <div class="cents-needle" id="centsNeedle" hidden></div>
+            </div>
+          </div>
+          <div class="signal-row">
+            <span class="tuner-label">Signal</span>
+            <div class="signal-bar"><div class="signal-fill" id="signalFill"></div></div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn-ghost" id="repeatBtn" title="Repeat the prompt or cue">🔊 Repeat</button>
+          <button class="btn btn-ghost" id="hintBtn" title="Reveal the answer">💡 Hint</button>
+          <button class="btn btn-warn" id="skipBtn" title="Skip — mic isn't hearing it">⏭ Skip</button>
+          <button class="btn btn-warn" id="newBtn" hidden>⏭⏭ New run</button>
+          <button class="btn btn-ghost" id="stopBtn">■ Stop</button>
+        </div>
+      </div>
+
+      <div class="flash" id="flash" hidden>✓</div>
+    </main>
+
+    <!-- ===================== Stats ===================== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Session stats</h2>
+        <button class="btn btn-ghost btn-small" id="resetStatsBtn">Reset all history</button>
+      </div>
+      <div class="tiles-label" id="tilesLabel"></div>
+      <div class="tiles" id="tilesRow"></div>
+
+      <details class="history">
+        <summary>All-time history &amp; breakdowns</summary>
+        <div id="historyContainer"></div>
+      </details>
+    </section>
+
+    <!-- ===================== Settings ===================== -->
+    <section class="card">
+      <h2>Settings</h2>
+      <div class="settings-grid">
+        <label class="setting">
+          <span>Highest fret: <strong id="maxFretVal">15</strong></span>
+          <input type="range" id="maxFret" min="5" max="22" step="1" value="15">
+        </label>
+        <label class="setting">
+          <span>Ear training difficulty</span>
+          <select id="earLevel" class="select">
+            <option value="easy" selected>Easy — open-string reference first, string shown</option>
+            <option value="medium">Medium — string shown, no reference</option>
+            <option value="hard">Hard — any string, exact octave</option>
+          </select>
+        </label>
+        <label class="setting">
+          <span>Call &amp; response phrase length: <strong id="phraseLenVal">3</strong> notes</span>
+          <input type="range" id="phraseLen" min="2" max="5" step="1" value="3">
+        </label>
+        <label class="setting checkbox"><input type="checkbox" id="voiceOn" checked> Speak prompts aloud</label>
+        <label class="setting checkbox"><input type="checkbox" id="adaptiveOn" checked> Focus mode — drill your slowest and most-skipped notes more often</label>
+        <label class="setting checkbox"><input type="checkbox" id="octaveStrict"> Strict octave (reject the 12th-fret octave of the target)</label>
+        <label class="setting checkbox"><input type="checkbox" id="descendOn"> Include descending scale runs (start at the octave, walk down)</label>
+        <fieldset class="setting strings-set">
+          <legend>Rhythm (scale runs &amp; call/response)</legend>
+          <label class="setting checkbox"><input type="checkbox" id="timedOn"> Metronome on — score each note against the beat</label>
+          <label class="setting checkbox"><input type="checkbox" id="rampOn" checked> Auto-ramp: +5 BPM after a perfect timed run</label>
+          <label class="setting" style="display:block;margin-top:6px;">
+            <span>Tempo: <strong id="bpmVal">80</strong> BPM</span>
+            <input type="range" id="bpm" min="40" max="200" step="5" value="80">
+          </label>
+        </fieldset>
+        <fieldset class="setting strings-set">
+          <legend>Strings to practice</legend>
+          <label><input type="checkbox" data-string="6" checked> 6 · Low E</label>
+          <label><input type="checkbox" data-string="5" checked> 5 · A</label>
+          <label><input type="checkbox" data-string="4" checked> 4 · D</label>
+          <label><input type="checkbox" data-string="3" checked> 3 · G</label>
+          <label><input type="checkbox" data-string="2" checked> 2 · B</label>
+          <label><input type="checkbox" data-string="1" checked> 1 · High E</label>
+        </fieldset>
+        <fieldset class="setting strings-set">
+          <legend>Scales to practice</legend>
+          <label><input type="checkbox" data-scale="minPent" checked> Minor pentatonic</label>
+          <label><input type="checkbox" data-scale="majPent" checked> Major pentatonic</label>
+          <label><input type="checkbox" data-scale="major" checked> Major</label>
+          <label><input type="checkbox" data-scale="minor" checked> Natural minor</label>
+          <label><input type="checkbox" data-scale="blues" checked> Blues</label>
+          <label><input type="checkbox" data-scale="majArp" checked> Major arpeggio</label>
+          <label><input type="checkbox" data-scale="minArp" checked> Minor arpeggio</label>
+          <label><input type="checkbox" data-scale="dom7Arp" checked> Dom7 arpeggio</label>
+        </fieldset>
+      </div>
+      <p class="fineprint">Tips: turn your guitar up and keep room noise down. In ear-training and
+      call-&amp;-response modes, use <strong>headphones</strong> so the app doesn't hear its own cues.
+      If a note rings true but the meter won't settle, hit <em>Skip</em> — skips are logged separately
+      and never count against your times. Microphone requires HTTPS or localhost.</p>
+    </section>
+
+    <footer>Standard tuning E-A-D-G-B-E · A4 = 440 Hz · stats stored locally in your browser</footer>
+
+    <div class="overlay" id="workoutSummary" hidden>
+      <div class="card overlay-card">
+        <h2>🏋️ Workout complete!</h2>
+        <div id="summaryBody"></div>
+        <button class="btn btn-primary" id="summaryClose">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="pitch.js"></script>
+  <script src="synth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
