@@ -819,8 +819,20 @@
     const cents = (midiFloat - nearest) * 100;
     const inTune = Math.abs(cents) <= CENTS_TOLERANCE;
 
-    els.heardNote.textContent = midiToName(nearest);
-    els.heardCents.textContent = (cents >= 0 ? '+' : '') + cents.toFixed(0) + '¢';
+    // While a cue is audible (or ringing out), during the post-cue grace
+    // window, or while a voice prompt is speaking the note name, speaker
+    // bleed into the mic would display the answer — blank the readout.
+    const muted = now - promptStartedAt < GRACE_MS || now < cueUntil ||
+                  ('speechSynthesis' in window && speechSynthesis.speaking);
+
+    if (muted) {
+      els.heardNote.textContent = '—';
+      els.heardCents.textContent = '';
+      els.centsNeedle.hidden = true;
+    } else {
+      els.heardNote.textContent = midiToName(nearest);
+      els.heardCents.textContent = (cents >= 0 ? '+' : '') + cents.toFixed(0) + '¢';
+    }
 
     // Metronome pulse indicator
     const click = window.GuitarSynth.clickInfo();
@@ -833,14 +845,14 @@
     const target = currentTargetMidi();
     if (target == null) return;
 
+    // No matching during grace or while a cue/voice prompt plays (speaker leak).
+    if (muted) return;
+
     // Needle: offset of what we hear vs the TARGET pitch, clamped to ±50¢.
     const centsFromTarget = (midiFloat - target) * 100;
     const centsMod = centsFromTarget - Math.round(centsFromTarget / 1200) * 1200;
     els.centsNeedle.hidden = false;
     els.centsNeedle.style.left = (50 + Math.max(-50, Math.min(50, centsMod))) + '%';
-
-    // No matching during grace or while a cue is playing (speaker leak).
-    if (now - promptStartedAt < GRACE_MS || now < cueUntil) return;
 
     switch (mode) {
       case 'note': if (prompt) matchNote(nearest, inTune); break;
