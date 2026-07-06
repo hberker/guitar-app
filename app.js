@@ -20,16 +20,53 @@
   };
 
   // Scale steps in semitones from the root, up to and including the octave.
+  // `degrees` gives each step's letter distance from the root (0 = same
+  // letter), so notes can be spelled diatonically: in G minor the 3rd is two
+  // letters up from G — some kind of B — and the semitone count makes it B♭,
+  // never A♯.
   const SCALES = {
-    minPent: { label: 'Minor Pentatonic', speech: 'minor pentatonic', steps: [0, 3, 5, 7, 10, 12] },
-    majPent: { label: 'Major Pentatonic', speech: 'major pentatonic', steps: [0, 2, 4, 7, 9, 12] },
-    major:   { label: 'Major',            speech: 'major',            steps: [0, 2, 4, 5, 7, 9, 11, 12] },
-    minor:   { label: 'Natural Minor',    speech: 'natural minor',    steps: [0, 2, 3, 5, 7, 8, 10, 12] },
-    blues:   { label: 'Blues',            speech: 'blues',            steps: [0, 3, 5, 6, 7, 10, 12] },
-    majArp:  { label: 'Major Arpeggio',   speech: 'major arpeggio',   steps: [0, 4, 7, 12] },
-    minArp:  { label: 'Minor Arpeggio',   speech: 'minor arpeggio',   steps: [0, 3, 7, 12] },
-    dom7Arp: { label: 'Dom7 Arpeggio',    speech: 'dominant seven arpeggio', steps: [0, 4, 7, 10, 12] },
+    minPent: { label: 'Minor Pentatonic', speech: 'minor pentatonic', steps: [0, 3, 5, 7, 10, 12], degrees: [0, 2, 3, 4, 6, 7] },
+    majPent: { label: 'Major Pentatonic', speech: 'major pentatonic', steps: [0, 2, 4, 7, 9, 12], degrees: [0, 1, 2, 4, 5, 7] },
+    major:   { label: 'Major',            speech: 'major',            steps: [0, 2, 4, 5, 7, 9, 11, 12], degrees: [0, 1, 2, 3, 4, 5, 6, 7] },
+    minor:   { label: 'Natural Minor',    speech: 'natural minor',    steps: [0, 2, 3, 5, 7, 8, 10, 12], degrees: [0, 1, 2, 3, 4, 5, 6, 7] },
+    blues:   { label: 'Blues',            speech: 'blues',            steps: [0, 3, 5, 6, 7, 10, 12], degrees: [0, 2, 3, 4, 4, 6, 7] },
+    majArp:  { label: 'Major Arpeggio',   speech: 'major arpeggio',   steps: [0, 4, 7, 12], degrees: [0, 2, 4, 7] },
+    minArp:  { label: 'Minor Arpeggio',   speech: 'minor arpeggio',   steps: [0, 3, 7, 12], degrees: [0, 2, 4, 7] },
+    dom7Arp: { label: 'Dom7 Arpeggio',    speech: 'dominant seven arpeggio', steps: [0, 4, 7, 10, 12], degrees: [0, 2, 4, 6, 7] },
   };
+
+  // Diatonic spelling: pick the root spelling (letter + at most one
+  // accidental) that spells the whole scale with the fewest accidentals —
+  // that's how B♭ beats A♯ as the root of a flat key, and E♭ beats D♯ inside
+  // G minor. Returns one name per scale step.
+  const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const LETTER_PC = [0, 2, 4, 5, 7, 9, 11];
+  const ACCIDENTALS = { '-2': '𝄫', '-1': '♭', 0: '', 1: '♯', 2: '𝄪' };
+  const accWrap = (d) => { const m = ((d % 12) + 12) % 12; return m > 6 ? m - 12 : m; };
+
+  function spellScale(rootMidi, scaleKey) {
+    const scale = SCALES[scaleKey];
+    const rootPc = ((rootMidi % 12) + 12) % 12;
+    let best = null;
+    for (let L = 0; L < 7; L++) {
+      if (Math.abs(accWrap(rootPc - LETTER_PC[L])) > 1) continue;
+      const names = [];
+      let cost = 0;
+      for (let i = 0; i < scale.steps.length; i++) {
+        const letter = (L + scale.degrees[i]) % 7;
+        const acc = accWrap(rootPc + scale.steps[i] - LETTER_PC[letter]);
+        if (Math.abs(acc) > 2) { cost = Infinity; break; }
+        cost += Math.abs(acc) + (Math.abs(acc) === 2 ? 10 : 0);  // double accidentals are a last resort
+        names.push(LETTERS[letter] + ACCIDENTALS[acc]);
+      }
+      if (cost < (best ? best.cost : Infinity)) best = { cost, names };
+    }
+    return best.names;
+  }
+
+  const nameToSpeech = (name) => name
+    .replace('𝄪', ' double sharp').replace('𝄫', ' double flat')
+    .replace('♯', ' sharp').replace('♭', ' flat');
 
   // Which finger frets the root note in scale runs; the finger dictates the
   // position/shape the player has to use.
@@ -357,11 +394,12 @@
     const root = rand(candidates);
     const descending = els.descendOn.checked && Math.random() < 0.5;
     let notes = scale.steps.map((s) => root.midi + s);
-    if (descending) notes = notes.slice().reverse();
+    let names = spellScale(root.midi, scaleKey);
+    if (descending) { notes = notes.slice().reverse(); names = names.slice().reverse(); }
 
     run = {
       scaleKey, string: root.string, rootFret: root.fret, finger: fingerIdx,
-      notes, descending,
+      notes, names, rootName: descending ? names.at(-1) : names[0], descending,
       idx: 0, startedAt: performance.now(), mistakes: 0, lastWrongMidi: null,
       offsets: [], skips: 0,
     };
@@ -376,8 +414,8 @@
       `String ${run.string} · Fret ${run.rootFret} · ${FINGERS[fingerIdx].label} on the root` +
       (timed ? ` · ♩ ${els.bpm.value}` : '');
     els.scaleName.textContent =
-      `${NOTE_NAMES[root.midi % 12]} ${scale.label}` + (descending ? ' ↓' : '');
-    renderDots(els.runDots, run.notes.map((m) => NOTE_NAMES[m % 12]), run.idx);
+      `${run.rootName} ${scale.label}` + (descending ? ' ↓' : '');
+    renderDots(els.runDots, run.names, run.idx);
     speakPrompt();
   }
 
@@ -396,7 +434,7 @@
       run.lastWrongMidi = null;
       stable = { midi: null, count: 0 };
       if (run.idx >= run.notes.length) completeRun();
-      else renderDots(els.runDots, run.notes.map((m) => NOTE_NAMES[m % 12]), run.idx);
+      else renderDots(els.runDots, run.names, run.idx);
     } else if (stable.midi !== prev && stable.midi !== run.lastWrongMidi) {
       // Wrong note: count it once per distinct pitch, keep the run going.
       // The previous scale note is exempt — it's still ringing.
@@ -412,7 +450,7 @@
     session.scale.runs++;
     session.scale.times.push(ms);
     run.idx = run.notes.length;
-    renderDots(els.runDots, run.notes.map((m) => NOTE_NAMES[m % 12]), run.idx);
+    renderDots(els.runDots, run.names, run.idx);
 
     // Timing score, when the metronome was on for this run.
     const click = window.GuitarSynth.clickInfo();
@@ -431,7 +469,7 @@
     }
 
     pushJson(KEYS.scale, {
-      scale: run.scaleKey, root: midiToName(run.descending ? run.notes.at(-1) : run.notes[0]),
+      scale: run.scaleKey, root: run.rootName,
       string: run.string, fret: run.rootFret, finger: FINGERS[run.finger].label,
       descending: !!run.descending, ms: Math.round(ms), mistakes: run.mistakes,
       onBeatPct, bpm: click ? click.bpm : null, ts: Date.now(),
@@ -536,6 +574,9 @@
     });
     const root = rand(candidates);
     const pool = scale.steps.map((s) => root.midi + s);
+    const poolNames = spellScale(root.midi, scaleKey);
+    const nameOf = {};
+    pool.forEach((m, i) => { nameOf[m] = poolNames[i]; });
 
     // Random walk over scale degrees: melodic, never repeating a note —
     // a repeat would self-confirm from the previous note still ringing.
@@ -549,7 +590,8 @@
     }
 
     phrase = {
-      scaleKey, rootMidi: root.midi, startString: root.string, startFret: root.fret,
+      scaleKey, rootMidi: root.midi, rootName: poolNames[0], nameOf,
+      startString: root.string, startFret: root.fret,
       notes, idx: 0, startedAt: 0, mistakes: 0, lastWrongMidi: null, offsets: [],
     };
     resetMatchState();
@@ -559,9 +601,9 @@
     else window.GuitarSynth.stopClick();
 
     els.phraseWhere.textContent =
-      `Around string ${root.string}, fret ${root.fret} · phrase starts on ${midiToName(notes[0])}` +
+      `Around string ${root.string}, fret ${root.fret} · phrase starts on ${nameOf[notes[0]]}` +
       (timed ? ` · ♩ ${els.bpm.value}` : '');
-    els.phraseName.textContent = `${NOTE_NAMES[root.midi % 12]} ${scale.label}`;
+    els.phraseName.textContent = `${poolNames[0]} ${scale.label}`;
     renderDots(els.phraseDots, phrase.notes.map(() => '?'), 0);
     playPhraseCue();
   }
@@ -582,7 +624,7 @@
   }
 
   function phraseDotLabels() {
-    return phrase.notes.map((m, i) => i < phrase.idx ? NOTE_NAMES[m % 12] : '?');
+    return phrase.notes.map((m, i) => i < phrase.idx ? phrase.nameOf[m] : '?');
   }
 
   function matchPhrase(nearest, inTune) {
@@ -612,7 +654,7 @@
           session.phrase.lastOnBeat = onBeatPct;
         }
         pushJson(KEYS.phrase, {
-          scale: phrase.scaleKey, root: midiToName(phrase.rootMidi),
+          scale: phrase.scaleKey, root: phrase.rootName,
           len: phrase.notes.length, ms: Math.round(ms),
           mistakes: phrase.mistakes, onBeatPct, ts: Date.now(),
         });
@@ -754,7 +796,7 @@
     if (mode === 'note' && prompt) {
       text = `${STRINGS[prompt.string].ordinal} string, ${NOTE_SPEECH[prompt.midi % 12]}.`;
     } else if (mode === 'scale' && run) {
-      text = `${NOTE_SPEECH[run.notes[0] % 12]} ${SCALES[run.scaleKey].speech}. ` +
+      text = `${nameToSpeech(run.rootName)} ${SCALES[run.scaleKey].speech}. ` +
              `Start on string ${STRINGS[run.string].speech}, fret ${run.rootFret}, ` +
              `${FINGERS[run.finger].speech}. Play up to the octave.`;
     } else if (mode === 'bend' && bend) {
@@ -929,7 +971,7 @@
       run.skips++;
       stable = { midi: null, count: 0 };
       if (run.idx >= run.notes.length) completeRun();
-      else renderDots(els.runDots, run.notes.map((m) => NOTE_NAMES[m % 12]), run.idx);
+      else renderDots(els.runDots, run.names, run.idx);
     } else if (mode === 'ear' && ear) {
       session.ear.skips++;
       pushJson(KEYS.ear, {
@@ -1327,11 +1369,15 @@
     phraseNotes: phrase && phrase.notes.slice(),
     earMidi: ear && ear.midi,
     runDescending: run && !!run.descending,
+    runNames: run && run.names.slice(),
+    runScaleKey: run && run.scaleKey,
+    runRootMidi: run && (run.descending ? run.notes.at(-1) : run.notes[0]),
     runOffsets: run && run.offsets.length,
     workout: workout && { step: workout.step, remaining: workout.remaining, finished: workout.finished },
   });
   window.__trainerTest = {
     setWorkoutPlan(plan) { workoutPlan = plan; },
+    spellScale,
   };
 
   loadSettings();
