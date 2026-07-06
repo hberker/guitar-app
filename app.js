@@ -11,12 +11,12 @@
                           'major 6th', 'minor 7th', 'major 7th'];
   // Standard tuning, string number -> open-string MIDI note.
   const STRINGS = {
-    6: { label: 'Low E', speech: 'six, the low E string', midi: 40 },
-    5: { label: 'A',     speech: 'five, the A string',    midi: 45 },
-    4: { label: 'D',     speech: 'four, the D string',    midi: 50 },
-    3: { label: 'G',     speech: 'three, the G string',   midi: 55 },
-    2: { label: 'B',     speech: 'two, the B string',     midi: 59 },
-    1: { label: 'High E', speech: 'one, the high E string', midi: 64 },
+    6: { label: 'Low E', speech: 'six',   ordinal: 'sixth',  midi: 40 },
+    5: { label: 'A',     speech: 'five',  ordinal: 'fifth',  midi: 45 },
+    4: { label: 'D',     speech: 'four',  ordinal: 'fourth', midi: 50 },
+    3: { label: 'G',     speech: 'three', ordinal: 'third',  midi: 55 },
+    2: { label: 'B',     speech: 'two',   ordinal: 'second', midi: 59 },
+    1: { label: 'High E', speech: 'one',  ordinal: 'first',  midi: 64 },
   };
 
   // Scale steps in semitones from the root, up to and including the octave.
@@ -105,6 +105,7 @@
   let running = false;
   let advancing = false;      // true while flashing success before next prompt
   let cueUntil = 0;           // suppress matching while a synth cue is audible
+  let speechSeq = 0;          // invalidates onend of cancelled voice prompts
 
   let prompt = null;          // note mode: { string, fret, midi }
   let promptStartedAt = 0;
@@ -751,7 +752,7 @@
     if (!els.voiceOn.checked || !('speechSynthesis' in window)) return;
     let text = null;
     if (mode === 'note' && prompt) {
-      text = `String ${STRINGS[prompt.string].speech}. Play ${NOTE_SPEECH[prompt.midi % 12]}.`;
+      text = `${STRINGS[prompt.string].ordinal} string, ${NOTE_SPEECH[prompt.midi % 12]}.`;
     } else if (mode === 'scale' && run) {
       text = `${NOTE_SPEECH[run.notes[0] % 12]} ${SCALES[run.scaleKey].speech}. ` +
              `Start on string ${STRINGS[run.string].speech}, fret ${run.rootFret}, ` +
@@ -763,9 +764,16 @@
         : `Hold ${NOTE_SPEECH[bend.startMidi % 12]} on string ${STRINGS[bend.string].speech}, fret ${bend.fret}.`;
     }
     if (!text) return;
+    const seq = ++speechSeq;   // supersedes any still-queued utterance's handler
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 1.05;
+    // The clock starts when the voice finishes — search time, not listening time.
+    u.onend = u.onerror = () => {
+      if (seq !== speechSeq || !running || advancing) return;
+      promptStartedAt = performance.now();
+      if (mode === 'scale' && run) run.startedAt = promptStartedAt;
+    };
     speechSynthesis.speak(u);
   }
 
@@ -819,8 +827,20 @@
     const cents = (midiFloat - nearest) * 100;
     const inTune = Math.abs(cents) <= CENTS_TOLERANCE;
 
-    els.heardNote.textContent = midiToName(nearest);
-    els.heardCents.textContent = (cents >= 0 ? '+' : '') + cents.toFixed(0) + '¢';
+    // While a cue is audible (or ringing out), during the post-cue grace
+    // window, or while a voice prompt is speaking the note name, speaker
+    // bleed into the mic would display the answer — blank the readout.
+    const muted = now - promptStartedAt < GRACE_MS || now < cueUntil ||
+                  ('speechSynthesis' in window && speechSynthesis.speaking);
+
+    if (muted) {
+      els.heardNote.textContent = '—';
+      els.heardCents.textContent = '';
+      els.centsNeedle.hidden = true;
+    } else {
+      els.heardNote.textContent = midiToName(nearest);
+      els.heardCents.textContent = (cents >= 0 ? '+' : '') + cents.toFixed(0) + '¢';
+    }
 
     // Metronome pulse indicator
     const click = window.GuitarSynth.clickInfo();
@@ -833,14 +853,14 @@
     const target = currentTargetMidi();
     if (target == null) return;
 
+    // No matching during grace or while a cue/voice prompt plays (speaker leak).
+    if (muted) return;
+
     // Needle: offset of what we hear vs the TARGET pitch, clamped to ±50¢.
     const centsFromTarget = (midiFloat - target) * 100;
     const centsMod = centsFromTarget - Math.round(centsFromTarget / 1200) * 1200;
     els.centsNeedle.hidden = false;
     els.centsNeedle.style.left = (50 + Math.max(-50, Math.min(50, centsMod))) + '%';
-
-    // No matching during grace or while a cue is playing (speaker leak).
-    if (now - promptStartedAt < GRACE_MS || now < cueUntil) return;
 
     switch (mode) {
       case 'note': if (prompt) matchNote(nearest, inTune); break;
@@ -853,13 +873,15 @@
 
   function updateTimer(now) {
     if (advancing) return;
+    // Spoken prompts work like ear cues: the clock starts when the voice ends.
+    const speaking = 'speechSynthesis' in window && speechSynthesis.speaking;
     const secs = (t) => ((now - t) / 1000).toFixed(1) + 's';
-    if (mode === 'note' && prompt) els.noteTimer.textContent = secs(promptStartedAt);
-    else if (mode === 'scale' && run) els.scaleTimer.textContent = secs(run.startedAt);
+    if (mode === 'note' && prompt) els.noteTimer.textContent = speaking ? '…' : secs(promptStartedAt);
+    else if (mode === 'scale' && run) els.scaleTimer.textContent = speaking ? '…' : secs(run.startedAt);
     else if (mode === 'ear' && ear) els.earTimer.textContent = now < cueUntil ? '…' : secs(promptStartedAt);
     else if (mode === 'phrase' && phrase) {
       els.phraseTimer.textContent = phrase.startedAt ? secs(phrase.startedAt) : '…';
-    } else if (mode === 'bend' && bend) els.bendTimer.textContent = secs(promptStartedAt);
+    } else if (mode === 'bend' && bend) els.bendTimer.textContent = speaking ? '…' : secs(promptStartedAt);
   }
 
   // ===================== Game flow =====================
